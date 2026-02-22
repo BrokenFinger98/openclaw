@@ -35,6 +35,7 @@ import {
   listChannelSupportedActions,
   resolveChannelMessageToolHints,
 } from "../../channel-tools.js";
+import { ensureCustomApiRegistered } from "../../custom-api-registry.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
@@ -685,10 +686,9 @@ export async function runEmbeddedAttempt(
         workspaceDir: params.workspaceDir,
       });
 
-      // Ollama native API: bypass SDK's streamSimple and use direct /api/chat calls
-      // for reliable streaming + tool calling support (#11828).
+      // Set stream function for the active session.
+      // Ollama uses native /api/chat; all others use the SDK's streamSimple.
       if (params.model.api === "ollama") {
-        // Use the resolved model baseUrl first so custom provider aliases work.
         const providerConfig = params.config?.models?.providers?.[params.model.provider];
         const modelBaseUrl =
           typeof params.model.baseUrl === "string" ? params.model.baseUrl.trim() : "";
@@ -700,6 +700,10 @@ export async function runEmbeddedAttempt(
         // Force a stable streamFn reference so vitest can reliably mock @mariozechner/pi-ai.
         activeSession.agent.streamFn = streamSimple;
       }
+
+      // Register in SDK API provider registry so completeSimple() (compaction,
+      // TTS, branch summarization) can resolve any custom API type.
+      ensureCustomApiRegistered(params.model.api, activeSession.agent.streamFn);
 
       applyExtraParamsToAgent(
         activeSession.agent,
